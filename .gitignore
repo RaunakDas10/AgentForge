@@ -1,0 +1,18 @@
+﻿# Dependencies
+node_modules/
+**/node_modules/
+
+# Environment & Secrets
+.env
+**/.env
+**/.env.*
+**/google-service-key.json
+
+# Build outputs
+dist/
+build/
+.next/
+
+# Metadata
+.DS_Store
+Thumbs.db
