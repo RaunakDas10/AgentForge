@@ -15,7 +15,6 @@ export const MediCare: React.FC<MediCareProps> = ({ onBack }) => {
     const [searchTerm, setSearchTerm] = useState('');
     const [loading, setLoading] = useState(false);
     const [drugInfo, setDrugInfo] = useState<DrugInfo | null>(null);
-    const [error, setError] = useState<string | null>(null);
 
     const formatTextToPoints = (text: string): string[] => {
         if (!text) return ["No information available."];
@@ -29,7 +28,6 @@ export const MediCare: React.FC<MediCareProps> = ({ onBack }) => {
         if (!medicineName.trim()) return;
 
         setLoading(true);
-        setError(null);
         setDrugInfo(null);
 
         try {
@@ -58,7 +56,6 @@ export const MediCare: React.FC<MediCareProps> = ({ onBack }) => {
             setDrugInfo(info);
 
         } catch (err: any) {
-            setError(err.message || 'Failed to fetch drug information');
             setDrugInfo({
                 brand_name: medicineName,
                 usage: ["No information available."],
