@@ -7,7 +7,7 @@ export interface AuthRequest extends Request {
 
 export const auth = (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
+    const token = (req as Request).headers.authorization?.replace('Bearer ', '');
 
     if (!token) {
       return res.status(401).json({ error: 'No token provided' });
