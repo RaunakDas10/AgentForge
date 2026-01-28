@@ -1,29 +1,19 @@
 import axios from 'axios';
+import type { Agent as AgentType } from '../types/agent.types';
 // import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Configuration
+// Use environment variable for API URL with fallback
 // const GEN_AI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+const API_URL = import.meta.env.PROD
+  ? 'https://agentforge-backend.onrender.com/api'
+  : 'http://localhost:5000/api';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-// Types
+// Types - Use Type from agent.types.ts but allow local override if needed
+export type Agent = AgentType;
 
 // const genAI = GEN_AI_KEY ? new GoogleGenerativeAI(GEN_AI_KEY) : null;
 
-export interface Agent {
-  id?: string;
-  _id?: string;
-  name: string;
-  description: string;
-  nodes: any[];
-  edges: any[];
-  status: 'draft' | 'active' | 'inactive';
-  triggers: string[];
-  actions: string[];
-  schedule: string;
-  createdAt?: string;
-  updatedAt?: string;
-}
 
 export interface ExecutionResult {
   _id: string;
@@ -51,7 +41,7 @@ const MockAgentService = {
   create: async (agentData: any) => {
     await delay(SIMULATE_DELAY);
     const agents = getStoredAgents();
-    const newAgent = { ...agentData, _id: `agent_${Date.now()}`, createdAt: new Date().toISOString() };
+    const newAgent = { ...agentData, _id: `agent_${Date.now()} `, createdAt: new Date().toISOString() };
     agents.push(newAgent);
     saveStoredAgents(agents);
     return newAgent;
@@ -124,8 +114,8 @@ const MockAgentService = {
     return {
       status: 'success',
       data: {
-        output: `<h1>Mock Website</h1><p>This is a mock response for prompt: ${prompt.substring(0, 30)}...</p>
-            <style>body { font-family: sans-serif; padding: 20px; }</style>`
+        output: `< h1 > Mock Website < /h1><p>This is a mock response for prompt: ${prompt.substring(0, 30)}...</p >
+  <style>body { font - family: sans - serif; padding: 20px; } </style>`
       }
     };
   },
