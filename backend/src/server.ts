@@ -26,9 +26,11 @@ app.get('/health', (req, res) => {
 // Start server
 const startServer = async () => {
   await connectDatabase();
+  console.log(`Debug: GEMINI_API_KEY present: ${!!process.env.GEMINI_API_KEY}`);
   app.listen(PORT, () => {
     console.log(`🚀 Server running on http://localhost:${PORT}`);
   });
 };
 
 startServer();
+// Restart trigger

@@ -3,7 +3,7 @@ import axios from 'axios';
 
 // Configuration
 // const GEN_AI_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 // Types
@@ -128,6 +128,122 @@ const MockAgentService = {
             <style>body { font-family: sans-serif; padding: 20px; }</style>`
       }
     };
+  },
+
+  generate: async (prompt: string) => {
+    await delay(2000);
+
+    // Intelligent mock: Parse the prompt for keywords
+    const lowerPrompt = prompt.toLowerCase();
+
+    // Detect schedule/frequency
+    let schedule = 'Real-time';
+    let triggerType = 'webhookTrigger';
+    let triggerLabel = 'Manual Trigger';
+
+    if (lowerPrompt.includes('every') || lowerPrompt.includes('daily') || lowerPrompt.includes('weekly') || lowerPrompt.includes('minute')) {
+      triggerType = 'scheduleTrigger';
+      if (lowerPrompt.includes('5 minutes')) schedule = 'Every 5 minutes';
+      else if (lowerPrompt.includes('hour')) schedule = 'Hourly';
+      else if (lowerPrompt.includes('daily')) schedule = 'Daily';
+      else if (lowerPrompt.includes('weekly')) schedule = 'Weekly';
+      else if (lowerPrompt.includes('sunday')) schedule = 'Every Sunday';
+      else schedule = 'Scheduled';
+      triggerLabel = 'Schedule Trigger';
+    }
+
+    // Detect actions
+    const actions = [];
+    const nodes = [];
+    const edges = [];
+    let nodeId = 1;
+    let yPos = 0;
+
+    // Add trigger node
+    nodes.push({
+      id: String(nodeId),
+      type: triggerType,
+      position: { x: 100, y: yPos },
+      data: { label: triggerLabel, type: 'trigger', schedule: schedule }
+    });
+    const triggerId = String(nodeId++);
+    yPos += 150;
+
+    // Detect specific actions
+    if (lowerPrompt.includes('price') || lowerPrompt.includes('bitcoin') || lowerPrompt.includes('stock')) {
+      nodes.push({
+        id: String(nodeId),
+        type: 'apiCall',
+        position: { x: 100, y: yPos },
+        data: { label: 'Fetch Price Data', type: 'action', url: 'https://api.coindesk.com/v1/bpi/currentprice.json' }
+      });
+      edges.push({ id: `e${triggerId}-${nodeId}`, source: triggerId, target: String(nodeId) });
+      actions.push('Fetch Price Data');
+      const lastNodeId = String(nodeId++);
+      yPos += 150;
+
+      if (lowerPrompt.includes('below') || lowerPrompt.includes('above') || lowerPrompt.includes('drop')) {
+        nodes.push({
+          id: String(nodeId),
+          type: 'ifElse',
+          position: { x: 100, y: yPos },
+          data: { label: 'Check Threshold', type: 'condition', condition: 'price < 50000' }
+        });
+        edges.push({ id: `e${lastNodeId}-${nodeId}`, source: lastNodeId, target: String(nodeId) });
+        actions.push('Condition Check');
+        const conditionId = String(nodeId++);
+        yPos += 150;
+
+        if (lowerPrompt.includes('slack') || lowerPrompt.includes('alert') || lowerPrompt.includes('notify')) {
+          nodes.push({
+            id: String(nodeId),
+            type: 'sendEmail',
+            position: { x: 100, y: yPos },
+            data: { label: 'Send Slack Alert', type: 'action', to: 'slack-webhook', subject: 'Price Alert' }
+          });
+          edges.push({ id: `e${conditionId}-${nodeId}`, source: conditionId, target: String(nodeId) });
+          actions.push('Send Slack Alert');
+          nodeId++;
+        }
+      }
+    } else if (lowerPrompt.includes('email')) {
+      nodes.push({
+        id: String(nodeId),
+        type: 'sendEmail',
+        position: { x: 100, y: yPos },
+        data: { label: 'Send Email', type: 'action', to: 'user@example.com', subject: 'Notification' }
+      });
+      edges.push({ id: `e${triggerId}-${nodeId}`, source: triggerId, target: String(nodeId) });
+      actions.push('Send Email');
+      nodeId++;
+    } else {
+      // Default: AI Process
+      nodes.push({
+        id: String(nodeId),
+        type: 'aiProcess',
+        position: { x: 100, y: yPos },
+        data: { label: 'AI Process', type: 'action', prompt: prompt }
+      });
+      edges.push({ id: `e${triggerId}-${nodeId}`, source: triggerId, target: String(nodeId) });
+      actions.push('AI Analysis');
+      nodeId++;
+    }
+
+    // Generate name from prompt
+    const name = prompt.split(' ').slice(0, 6).join(' ') + (prompt.split(' ').length > 6 ? '...' : '');
+
+    return {
+      status: 'success',
+      data: {
+        nodes,
+        edges,
+        triggers: [triggerLabel],
+        actions,
+        schedule,
+        name,
+        description: prompt
+      }
+    };
   }
 };
 
@@ -199,10 +315,26 @@ const RealAgentService = {
   executeAdHoc: async (prompt: string) => {
     const response = await axios.post(`${API_URL}/agents/execute-adhoc`, { prompt });
     return response.data;
+  },
+
+  generate: async (prompt: string) => {
+    const response = await axios.post(`${API_URL}/agents/generate`, { prompt });
+    return response.data;
   }
 };
 
+// Special configuration for agent generation
+const USE_MOCK_GENERATION = import.meta.env.VITE_USE_MOCK_AGENT_GENERATION === 'true';
+
+// Hybrid service: Use REAL for everything except generation (which can be mocked for demo)
+const HybridAgentService = {
+  ...RealAgentService,
+  generate: USE_MOCK_GENERATION ? MockAgentService.generate : RealAgentService.generate
+};
+
 // Export based on configuration
-export const agentService = USE_MOCK ? MockAgentService : RealAgentService;
+export const agentService = USE_MOCK ? MockAgentService : HybridAgentService;
 
 console.log(`Agent Service Initialized. Mode: ${USE_MOCK ? 'MOCK' : 'REAL'}`);
+console.log(`Agent Generation: ${USE_MOCK_GENERATION ? 'MOCK (Demo Mode)' : 'REAL (AI Powered)'}`);
+

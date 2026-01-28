@@ -14,6 +14,7 @@ import { HeroPreview } from './components/common/HeroPreview';
 import { Onboarding } from './components/common/Onboarding';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { AuthModal } from './components/auth/AuthModal';
+import logoNew from './assets/logo_new.jpg';
 
 type Page = 'home' | 'dashboard' | 'builder' | 'templates' | 'profile' | 'nl-creator' | 'template-view' | 'website-builder';
 
@@ -275,9 +276,16 @@ const AppContent = () => {
             setCurrentPage('home');
             navigate('/');
           }}>
-            <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-pink-500 rounded-xl flex items-center justify-center">
-              <Sparkles className="w-6 h-6" />
-            </div>
+            <div
+              className="w-[50px] h-[50px] rounded-full border-2 border-purple-500/50 shadow-lg shadow-purple-500/20 animate-spin-slow bg-slate-900"
+              style={{
+                backgroundImage: `url(${logoNew})`,
+                backgroundSize: '220%',
+                backgroundPosition: 'center 35%',
+                backgroundRepeat: 'no-repeat'
+              }}
+              title="AgentWeaver Logo"
+            />
             <span className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
               AgentWeaver
             </span>

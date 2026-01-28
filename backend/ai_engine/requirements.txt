@@ -3,3 +3,4 @@ flask-cors
 python-dotenv
 google-generative-ai
 phidata
+youtube-transcript-api

@@ -1,8 +1,12 @@
 import React, { useState } from 'react';
-import { Sparkles, Zap, CheckCircle, Loader2, ArrowLeft } from 'lucide-react';
+import { Sparkles, Zap, CheckCircle, Loader2, ArrowLeft, Info } from 'lucide-react';
+import { agentService } from '../services/agentService';
 import { useAgentStore } from '../store/agentStore';
 import { ThinkingTerminal, type LogStep } from '../components/agent/ThinkingTerminal';
 import type { Agent } from '../types/agent.types';
+
+// Check if using mock mode for demo
+const USE_MOCK_GENERATION = import.meta.env.VITE_USE_MOCK_AGENT_GENERATION === 'true';
 
 interface NLAgentCreatorProps {
   onBack: () => void;
@@ -44,196 +48,83 @@ export const NLAgentCreator: React.FC<NLAgentCreatorProps> = ({ onBack, onAgentC
     // 1. Analysis Phase
     addLog(`Received input: "${input}"`, 'info');
     await new Promise(r => setTimeout(r, 600));
-    addLog("Analyzing intent and entity extraction...", 'analysis');
-    await new Promise(r => setTimeout(r, 800));
+    addLog("Sending prompt to AI Agent Builder...", 'analysis');
 
-    // Detect capabilities
-    const triggers = detectTriggers(input);
-    const actions = detectActions(input);
-    const schedule = detectSchedule(input);
-
-    addLog(`Detected Trigger Strategy: ${triggers[0]}`, 'success');
-    await new Promise(r => setTimeout(r, 500));
-
-    if (schedule !== '⚡ Real-time') {
-      addLog(`Schedule Identified: ${schedule}`, 'success');
-      await new Promise(r => setTimeout(r, 400));
-    }
-
-    addLog("Scanning action registry for compatible tools...", 'analysis');
-    await new Promise(r => setTimeout(r, 800));
-
-    actions.forEach(action => {
-      addLog(`Selected Tool: ${action}`, 'tool');
-    });
-    await new Promise(r => setTimeout(r, 600));
-
-    // 2. Construction Phase
-    addLog("Constructing execution graph...", 'info');
-    await new Promise(r => setTimeout(r, 1000));
-
-    // Generate nodes and edges based on natural language
-    const { nodes, edges } = generateWorkflow(input);
-    addLog(`Generated ${nodes.length} nodes and ${edges.length} connections.`, 'success');
-    await new Promise(r => setTimeout(r, 600));
-
-    // 3. Finalization
-    addLog("Validating workflow integrity...", 'analysis');
-    await new Promise(r => setTimeout(r, 800));
-    addLog("Agent configuration finalized.", 'success');
-    await new Promise(r => setTimeout(r, 400));
-
-    // Create the agent
-    const newAgent: Agent = {
-      id: `agent_${Date.now()}`,
-      name: input.split(' ').slice(0, 5).join(' ') + '...',
-      description: input,
-      nodes,
-      edges,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      triggers,
-      actions,
-      schedule,
-    };
-
-    setAgent(newAgent);
-
-    // Save to backend
     try {
-      const savedAgent = await saveAgent({
-        ...newAgent,
+      // Call Real AI Service
+      const response = await agentService.generate(input);
+
+      if (!response.data) {
+        throw new Error("Invalid response from AI service");
+      }
+
+      const aiData = response.data;
+
+      // 2. Processing Response
+      addLog("AI Analysis Complete.", 'success');
+      await new Promise(r => setTimeout(r, 500));
+
+      // Log detected capabilities
+      if (aiData.triggers && aiData.triggers.length > 0) {
+        addLog(`Detected Triggers: ${aiData.triggers.join(', ')}`, 'success');
+      }
+      if (aiData.actions && aiData.actions.length > 0) {
+        aiData.actions.forEach((action: string) => addLog(`Selected Action: ${action}`, 'tool'));
+      }
+      if (aiData.schedule) {
+        addLog(`Schedule Identified: ${aiData.schedule}`, 'success');
+      }
+
+      await new Promise(r => setTimeout(r, 600));
+
+      // 3. Construction Phase
+      addLog("Constructing execution graph from AI blueprint...", 'info');
+      await new Promise(r => setTimeout(r, 800));
+
+      const { nodes, edges } = aiData;
+      addLog(`Generated ${nodes.length} nodes and ${edges.length} connections.`, 'success');
+
+      // 4. Finalization
+      addLog("Validating workflow integrity...", 'analysis');
+      await new Promise(r => setTimeout(r, 500));
+      addLog("Agent configuration finalized.", 'success');
+
+      // Create the agent object
+      const newAgent: Agent = {
+        id: `agent_${Date.now()}`,
+        name: aiData.name || (input.split(' ').slice(0, 5).join(' ') + '...'),
+        description: aiData.description || input,
+        nodes: nodes,
+        edges: edges,
+        status: 'draft',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
-      });
+        triggers: aiData.triggers || [],
+        actions: aiData.actions || [],
+        schedule: aiData.schedule || 'Real-time',
+      };
 
-      console.log('Agent saved:', savedAgent);
+      setAgent(newAgent);
+
+      // Save to backend
+      try {
+        await saveAgent({
+          ...newAgent,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        console.log('Agent saved successfully');
+      } catch (error) {
+        console.error('Failed to save agent:', error);
+        addLog("Failed to persist agent configuration.", 'error');
+      }
+
     } catch (error) {
-      console.error('Failed to save agent:', error);
-      addLog("Failed to persist agent configuration.", 'error');
+      console.error("AI Generation Failed:", error);
+      addLog("Failed to generate agent. Please try again or check backend logs.", 'error');
     }
 
     setIsCreating(false);
-  };
-
-  const generateWorkflow = (text: string) => {
-    const nodes: any[] = [];
-    const edges: any[] = [];
-
-    let yPosition = 50;
-
-    // 1. Add Trigger Node
-    const triggerType = text.includes('every') || text.includes('daily') ? 'scheduleTrigger' : 'webhookTrigger';
-    nodes.push({
-      id: 'trigger-1',
-      type: triggerType,
-      position: { x: 100, y: yPosition },
-      data: {
-        label: triggerType === 'scheduleTrigger' ? 'Schedule Trigger' : 'Webhook Trigger',
-        type: 'trigger',
-        schedule: detectSchedule(text)
-      }
-    });
-
-    let lastNodeId = 'trigger-1';
-    yPosition += 100;
-
-    // 2. Add Action Nodes based on keywords
-    if (text.includes('email') || text.includes('send')) {
-      const nodeId = 'action-email';
-      nodes.push({
-        id: nodeId,
-        type: 'sendEmail',
-        position: { x: 100, y: yPosition },
-        data: {
-          label: 'Send Email',
-          type: 'action',
-          to: 'user@example.com',
-          subject: 'Automated Email'
-        }
-      });
-      edges.push({ id: `e-${lastNodeId}-${nodeId}`, source: lastNodeId, target: nodeId });
-      lastNodeId = nodeId;
-      yPosition += 100;
-    }
-
-    if (text.includes('summarize') || text.includes('analyze')) {
-      const nodeId = 'action-ai';
-      nodes.push({
-        id: nodeId,
-        type: 'aiProcess',
-        position: { x: 100, y: yPosition },
-        data: {
-          label: 'AI Process',
-          type: 'action',
-          prompt: `Analyze and summarize: ${text}`
-        }
-      });
-      edges.push({ id: `e-${lastNodeId}-${nodeId}`, source: lastNodeId, target: nodeId });
-      lastNodeId = nodeId;
-      yPosition += 100;
-    }
-
-    if (text.includes('api') || text.includes('fetch') || text.includes('get data')) {
-      const nodeId = 'action-api';
-      nodes.push({
-        id: nodeId,
-        type: 'apiCall',
-        position: { x: 100, y: yPosition },
-        data: {
-          label: 'API Call',
-          type: 'action',
-          method: 'GET'
-        }
-      });
-      edges.push({ id: `e-${lastNodeId}-${nodeId}`, source: lastNodeId, target: nodeId });
-      lastNodeId = nodeId;
-      yPosition += 100;
-    }
-
-    // 3. Add Condition if needed
-    if (text.includes('if') || text.includes('when') || text.includes('alert if')) {
-      const nodeId = 'condition-1';
-      nodes.push({
-        id: nodeId,
-        type: 'ifElse',
-        position: { x: 100, y: yPosition },
-        data: {
-          label: 'If/Else',
-          type: 'condition',
-          condition: 'value > 0'
-        }
-      });
-      edges.push({ id: `e-${lastNodeId}-${nodeId}`, source: lastNodeId, target: nodeId });
-    }
-
-    return { nodes, edges };
-  };
-
-  const detectTriggers = (text: string) => {
-    if (text.includes('email') || text.includes('gmail')) return ['📧 Email Trigger'];
-    if (text.includes('every') || text.includes('daily')) return ['📅 Schedule Trigger'];
-    if (text.includes('when') || text.includes('if')) return ['⚡ Event Trigger'];
-    return ['🔔 Webhook Trigger'];
-  };
-
-  const detectActions = (text: string) => {
-    const actions = [];
-    if (text.includes('email') || text.includes('send')) actions.push('📨 Send Email');
-    if (text.includes('slack') || text.includes('alert')) actions.push('💬 Slack Message');
-    if (text.includes('whatsapp')) actions.push('📱 WhatsApp');
-    if (text.includes('summarize') || text.includes('analyze')) actions.push('🤖 AI Analysis');
-    if (text.includes('track') || text.includes('check')) actions.push('🔍 Web Scraper');
-    return actions.length > 0 ? actions : ['✅ Execute Action'];
-  };
-
-  const detectSchedule = (text: string) => {
-    if (text.includes('daily') || text.includes('every day')) return '🕐 Daily';
-    if (text.includes('sunday') || text.includes('monday')) return '📅 Weekly';
-    if (text.includes('morning')) return '🌅 9:00 AM';
-    if (text.includes('8pm') || text.includes('evening')) return '🌙 8:00 PM';
-    return '⚡ Real-time';
   };
 
   const handleDeploy = () => {
@@ -275,6 +166,23 @@ export const NLAgentCreator: React.FC<NLAgentCreatorProps> = ({ onBack, onAgentC
             Describe what you want in plain English. We'll build it instantly.
           </p>
         </div>
+
+        {/* Demo Mode Disclaimer */}
+        {USE_MOCK_GENERATION && (
+          <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 mb-8 backdrop-blur-sm">
+            <div className="flex items-start gap-3">
+              <Info className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-blue-300 font-semibold mb-1">Demo Mode Active</h3>
+                <p className="text-blue-200/80 text-sm leading-relaxed">
+                  This feature uses an <strong>intelligent demo system</strong> to showcase agent generation capabilities.
+                  The full AI-powered version requires Gemini API credits which are currently rate-limited for production deployment.
+                  The demo accurately simulates agent creation based on your prompts with realistic workflow structures.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Main Input Area */}
         <div className="bg-white/10 backdrop-blur-xl rounded-2xl p-8 border border-white/20 mb-8 transition-all hover:border-purple-500/30">

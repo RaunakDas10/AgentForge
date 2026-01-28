@@ -12,6 +12,7 @@ import { MediCare } from './templates/MediCare';
 import { FinancialStress } from './templates/FinancialStress';
 import { MedSageLite } from './templates/MedSageLite';
 import { GrammarX } from './templates/GrammarX';
+import { LinkToQr } from './templates/LinkToQr';
 
 // Placeholder for templates not yet implemented
 const PlaceholderTemplate: React.FC<{ templateId: string; onBack: () => void }> = ({ templateId, onBack }) => (
@@ -57,6 +58,8 @@ export const TemplatePage: React.FC<TemplatePageProps> = ({ templateId, onBack }
             return <MedSageLite onBack={onBack} />;
         case 'grammar-x':
             return <GrammarX onBack={onBack} />;
+        case 'link-to-qr':
+            return <LinkToQr onBack={onBack} />;
         // Add more cases here as we implement them
         default:
             // Fallback for unimplemented templates

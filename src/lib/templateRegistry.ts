@@ -1,4 +1,4 @@
-import { Mail, Calendar, Globe, Database, Video, Zap, FileText, TrendingUp, Activity, Edit3 } from 'lucide-react';
+import { Mail, Calendar, Globe, Database, Video, Zap, FileText, TrendingUp, Activity, Edit3, QrCode } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
 export interface TemplateInput {
@@ -183,6 +183,36 @@ export const templates: Template[] = [
     ]
   },
   {
+    id: 'grammar-x',
+    name: 'GrammarX',
+    description: 'Free improvised grammar and spell checker',
+    category: 'Writing',
+    icon: Edit3,
+    color: 'bg-gradient-to-br from-purple-600 to-indigo-600',
+    nodes: 5,
+    apiEndpoint: '', // Client-side logic usage
+    inputs: []
+  },
+  {
+    id: 'link-to-qr',
+    name: 'Link to QR',
+    description: 'Generate QR codes from links or text instantly',
+    category: 'Utilities',
+    icon: QrCode,
+    color: 'bg-gradient-to-br from-purple-500 to-indigo-600',
+    nodes: 1,
+    apiEndpoint: '', // Client-side
+    inputs: [
+      {
+        id: 'url',
+        label: 'URL or Text',
+        type: 'text',
+        placeholder: 'https://example.com',
+        required: true
+      }
+    ]
+  },
+  {
     id: 'youtube-analyzer',
     name: 'YouTube Analyzer',
     description: 'Summarize videos and extract key insights',
@@ -252,17 +282,6 @@ export const templates: Template[] = [
         defaultValue: 'professional'
       }
     ]
-  },
-  {
-    id: 'grammar-x',
-    name: 'GrammarX',
-    description: 'Free improvised grammar and spell checker',
-    category: 'Writing',
-    icon: Edit3,
-    color: 'bg-gradient-to-br from-purple-600 to-indigo-600',
-    nodes: 5,
-    apiEndpoint: '', // Client-side logic usage
-    inputs: []
   }
 ];
 

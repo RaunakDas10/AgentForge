@@ -1,6 +1,7 @@
 import os
 from phi.agent import Agent
 from phi.model.google import Gemini
+from phi.tools.youtube_tools import YouTubeTools
 
 def create_agent():
     """
@@ -12,7 +13,9 @@ def create_agent():
 
     # Initialize the Agent
     agent = Agent(
-        model=Gemini(id="gemini-2.0-flash-exp", api_key=api_key),
+        model=Gemini(id="models/gemini-1.5-flash", api_key=api_key),
+        tools=[YouTubeTools()],
+        show_tool_calls=True,
         description="You are a helpful AI assistant.",
         markdown=True
     )

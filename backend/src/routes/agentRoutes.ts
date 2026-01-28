@@ -7,13 +7,15 @@ import {
   deleteAgent,
   executeAgent,
   getAgentExecutions,
-  executeAdHocAgent
+  executeAdHocAgent,
+  generateAgentFromPrompt
 } from '../controllers/agentController';
 
 const router = express.Router();
 
 // Agent CRUD
 router.post('/', createAgent);
+router.post('/generate', generateAgentFromPrompt); // New Generation Route
 router.get('/', getAgents);
 router.get('/:id', getAgent);
 router.put('/:id', updateAgent);
