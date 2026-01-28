@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom';
-import { Sparkles, Zap, Brain, Code, Database, Globe, Video, Calendar, Mail, ArrowRight, CheckCircle, Menu, X, BookTemplate, Laptop } from 'lucide-react';
+import { Sparkles, Zap, Brain, Code, Database, Globe, Video, Calendar, Mail, ArrowRight, CheckCircle, Menu, X, BookTemplate, Laptop, LogIn, LogOut, User as UserIcon } from 'lucide-react';
 import { AgentBuilder } from './pages/AgentBuilder';
 import { Dashboard } from './pages/Dashboard';
 import { Templates } from './pages/Templates';
@@ -8,12 +8,14 @@ import { Profile } from './pages/Profile';
 import { NLAgentCreator } from './pages/NLAgentCreator';
 import { TemplatePage } from './pages/TemplatePage';
 import { WebsiteBuilder } from './pages/WebsiteBuilder';
+import { Auth } from './pages/Auth';
 import { AgentWizard } from './components/wizard/AgentWizard';
 import { GuideBot } from './components/common/GuideBot';
 import { HeroPreview } from './components/common/HeroPreview';
 import { Onboarding } from './components/common/Onboarding';
+import { AuthProvider, useAuth } from './context/AuthContext';
 
-type Page = 'home' | 'dashboard' | 'builder' | 'templates' | 'profile' | 'nl-creator' | 'template-view' | 'website-builder';
+type Page = 'home' | 'dashboard' | 'builder' | 'templates' | 'profile' | 'nl-creator' | 'template-view' | 'website-builder' | 'auth';
 
 const AppContent = () => {
   const [currentPage, setCurrentPage] = useState<Page>('home');
@@ -28,28 +30,49 @@ const AppContent = () => {
 
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
 
   // Handle deep linking
   useEffect(() => {
     if (location.pathname.startsWith('/templates/')) {
       const templateId = location.pathname.split('/templates/')[1];
       if (templateId) {
-        setActiveTemplateId(templateId);
-        setCurrentPage('template-view');
+        if (!user) {
+          setCurrentPage('auth');
+        } else {
+          setActiveTemplateId(templateId);
+          setCurrentPage('template-view');
+        }
       }
     } else if (location.pathname === '/templates') {
-      setCurrentPage('templates');
+      if (!user) {
+        setCurrentPage('auth');
+      } else {
+        setCurrentPage('templates');
+      }
     } else if (location.pathname === '/website-builder') {
       setCurrentPage('website-builder');
+    } else if (location.pathname === '/auth') {
+      setCurrentPage('auth');
     }
-  }, [location.pathname]);
+  }, [location.pathname, user]);
 
+
+  // Debug logging
+  useEffect(() => {
+    console.log("App State -> User:", user ? "Logged In" : "Logged Out", "CurrentPage:", currentPage);
+  }, [user, currentPage]);
 
   const handleCreateNew = () => {
     setWizardOpen(true);
   };
 
   const handleCreateWithAI = () => {
+    if (!user) {
+      navigate('/auth');
+      setCurrentPage('auth');
+      return;
+    }
     setCurrentPage('nl-creator');
     navigate('/nl-creator'); // Optional: sync URL
   };
@@ -95,12 +118,38 @@ const AppContent = () => {
   };
 
   const navigateToDashboard = () => {
+    if (!user) {
+      navigate('/auth');
+      setCurrentPage('auth');
+      return;
+    }
+
     if (!hasCompletedOnboarding) {
       setShowOnboarding(true);
     } else {
       setCurrentPage('dashboard');
     }
   };
+
+  const handleAuthRequired = (targetPage: string) => {
+    if (!user) {
+      navigate('/auth');
+      setCurrentPage('auth');
+    } else {
+      navigate(targetPage);
+      if (targetPage === '/templates') setCurrentPage('templates');
+    }
+  }
+
+  // Auth Page
+  if (currentPage === 'auth') {
+    return (
+      <Auth onBack={() => {
+        setCurrentPage('home');
+        navigate('/');
+      }} />
+    );
+  }
 
   // Natural Language Creator Page
   if (currentPage === 'nl-creator') {
@@ -266,18 +315,45 @@ const AppContent = () => {
               Website Builder
             </button>
             <button
-              onClick={() => {
-                setCurrentPage('templates');
-                navigate('/templates');
-              }}
+              onClick={() => handleAuthRequired('/templates')}
               className="hover:text-purple-400 transition-colors flex items-center gap-2"
             >
               <BookTemplate className="w-4 h-4" />
               Templates
             </button>
+
+            {user ? (
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm text-purple-200">
+                  <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center border border-purple-500/30">
+                    <UserIcon className="w-4 h-4" />
+                  </div>
+                  <span>{user.displayName || user.email?.split('@')[0]}</span>
+                </div>
+                <button
+                  onClick={() => logout()}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setCurrentPage('auth');
+                  navigate('/auth');
+                }}
+                className="flex items-center gap-2 px-4 py-2 text-slate-300 hover:text-white transition-colors"
+              >
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </button>
+            )}
+
             <button
               onClick={navigateToDashboard}
-              className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full hover:shadow-lg hover:shadow-purple-500/50 transition-all"
+              className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full hover:shadow-lg hover:shadow-purple-500/50 transition-all shadow-lg"
             >
               Get Started
             </button>
@@ -307,15 +383,40 @@ const AppContent = () => {
                 Website Builder
               </button>
               <button
-                onClick={() => {
-                  setCurrentPage('templates');
-                  navigate('/templates');
-                }}
+                onClick={() => handleAuthRequired('/templates')}
                 className="text-left hover:text-purple-400 transition-colors flex items-center gap-2"
               >
                 <BookTemplate className="w-4 h-4" />
                 Templates
               </button>
+
+              {user ? (
+                <>
+                  <div className="flex items-center gap-2 text-sm text-purple-200 py-2 border-t border-white/10">
+                    <UserIcon className="w-4 h-4" />
+                    <span>{user.displayName || user.email}</span>
+                  </div>
+                  <button
+                    onClick={() => logout()}
+                    className="text-left hover:text-red-400 transition-colors flex items-center gap-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    Sign Out
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={() => {
+                    setCurrentPage('auth');
+                    navigate('/auth');
+                  }}
+                  className="text-left hover:text-purple-400 transition-colors flex items-center gap-2"
+                >
+                  <LogIn className="w-4 h-4" />
+                  Sign In
+                </button>
+              )}
+
               <button
                 onClick={() => {
                   setCurrentPage('dashboard');
@@ -327,7 +428,7 @@ const AppContent = () => {
               </button>
               <button
                 onClick={navigateToDashboard}
-                className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full"
+                className="px-6 py-2 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full text-center"
               >
                 Get Started
               </button>
@@ -374,10 +475,7 @@ const AppContent = () => {
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
             <button
-              onClick={() => {
-                setCurrentPage('templates');
-                navigate('/templates');
-              }}
+              onClick={() => handleAuthRequired('/templates')}
               className="px-8 py-4 bg-white/10 backdrop-blur-sm rounded-full text-lg font-semibold hover:bg-white/20 transition-all border border-white/20"
             >
               Browse Templates
@@ -533,20 +631,12 @@ const AppContent = () => {
 
 const App = () => {
   return (
-    <BrowserRouter>
-      <AppContent />
-    </BrowserRouter>
+    <AuthProvider>
+      <BrowserRouter>
+        <AppContent />
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
 
 export default App;
-
-import { onAuthStateChanged } from "firebase/auth";
-import { auth } from "@/lib/firebase";
-
-useEffect(() => {
-  const unsub = onAuthStateChanged(auth, user => {
-    console.log("User:", user);
-  });
-  return () => unsub();
-}, []);
