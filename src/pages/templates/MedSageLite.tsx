@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Activity, ShieldAlert, FileText, Database, HeartPulse, Pill, Search } from 'lucide-react';
+import { ArrowLeft, Activity, ShieldAlert, FileText, Database, HeartPulse, Pill, Search, Sparkles, Zap } from 'lucide-react';
+import { medicalAIService } from '../../services/medicalAI';
+import type { AIExtractionResult } from '../../services/medicalAI';
 
 interface MedSageLiteProps {
     onBack: () => void;
@@ -54,18 +56,30 @@ Patient reports no headaches or chest pain.`);
     const [results, setResults] = useState<ExtractionResult[]>([]);
     const [isProcessing, setIsProcessing] = useState(false);
 
+    // AI Enhancement States
+    const [useAI, setUseAI] = useState(false);
+    const [aiResults, setAiResults] = useState<AIExtractionResult | null>(null);
+    const [isAIProcessing, setIsAIProcessing] = useState(false);
+
     const runDeterministicExtraction = () => {
         setIsProcessing(true);
         const extractions: ExtractionResult[] = [];
         const lowerText = inputText.toLowerCase();
 
         // --- A. VITALS EXTRACTION (REGEX) ---
-        // Pattern: Matches "120/80" or "140/90"
+        // Pattern: Matches "120/80" or "140/90" but NOT dates like "12/05/1990"
         const bpRegex = /\b\d{2,3}\/\d{2,3}\b/g;
         let match;
         while ((match = bpRegex.exec(inputText)) !== null) {
             const bpVal = match[0];
             const [sys, dia] = bpVal.split('/').map(Number);
+
+            // Validate: Systolic should be 60-300, Diastolic should be 30-200
+            // This filters out dates like 12/05 or 01/15
+            if (sys < 60 || sys > 300 || dia < 30 || dia > 200) {
+                continue; // Skip this match, it's likely a date
+            }
+
             let risk: ExtractionResult['riskLevel'] = 'Low';
 
             if (sys > 180 || dia > 120) risk = 'Critical';
@@ -80,6 +94,7 @@ Patient reports no headaches or chest pain.`);
                 riskLevel: risk
             });
         }
+
 
         // --- B. ENTITY EXTRACTION & NEGATION CHECK ---
         const checkNegation = (index: number, text: string) => {
@@ -230,6 +245,157 @@ Patient reports no headaches or chest pain.`);
         setIsProcessing(false);
     };
 
+    const runAIEnhancedExtraction = async () => {
+        setIsProcessing(true);
+        setIsAIProcessing(true);
+
+        // Step 1: Run deterministic extraction first
+        const extractions: ExtractionResult[] = [];
+        const lowerText = inputText.toLowerCase();
+
+        // Run all the same extraction logic as before
+        // (Vitals, Entities, Risk Assessment)
+        const bpRegex = /\b\d{2,3}\/\d{2,3}\b/g;
+        let match;
+        while ((match = bpRegex.exec(inputText)) !== null) {
+            const bpVal = match[0];
+            const [sys, dia] = bpVal.split('/').map(Number);
+
+            // Validate: Filter out dates
+            if (sys < 60 || sys > 300 || dia < 30 || dia > 200) {
+                continue;
+            }
+
+            let risk: ExtractionResult['riskLevel'] = 'Low';
+            if (sys > 180 || dia > 120) risk = 'Critical';
+            else if (sys >= 140 || dia >= 90) risk = 'High';
+            else if (sys >= 130 || dia >= 80) risk = 'Moderate';
+            extractions.push({
+                type: 'Vital',
+                value: `BP ${bpVal}`,
+                sourceIndex: match.index,
+                context: `Found vital sign pattern`,
+                riskLevel: risk
+            });
+        }
+
+
+        const checkNegation = (index: number, text: string) => {
+            const windowStart = Math.max(0, index - 40);
+            const windowText = text.substring(windowStart, index).toLowerCase();
+            const negationTerms = ['no ', 'not ', 'denies ', 'negative for ', 'without '];
+            return negationTerms.some(term => windowText.includes(term));
+        };
+
+        CONDITIONS_DB.forEach(cond => {
+            const idx = lowerText.indexOf(cond.toLowerCase());
+            if (idx !== -1 && !checkNegation(idx, inputText)) {
+                extractions.push({
+                    type: 'Condition',
+                    value: cond,
+                    sourceIndex: idx,
+                    context: 'Matched against Clinical Knowledge Base (DB)',
+                    riskLevel: 'Low'
+                });
+            }
+        });
+
+        MEDICATIONS_DB.forEach(med => {
+            const idx = lowerText.indexOf(med.toLowerCase());
+            if (idx !== -1 && !checkNegation(idx, inputText)) {
+                let risk: ExtractionResult['riskLevel'] = 'Low';
+                if (['Methotrexate', 'Warfarin', 'Insulin'].includes(med)) risk = 'Moderate';
+                extractions.push({
+                    type: 'Medication',
+                    value: med,
+                    sourceIndex: idx,
+                    context: 'Matched against Clinical Knowledge Base (DB)',
+                    riskLevel: risk
+                });
+            }
+        });
+
+        // Set initial results
+        setResults(extractions);
+        setIsProcessing(false);
+
+        // Step 2: Call AI for enhancement
+        try {
+            const conditions = extractions.filter(e => e.type === 'Condition').map(e => e.value);
+            const medications = extractions.filter(e => e.type === 'Medication').map(e => e.value);
+            const vitals = extractions.filter(e => e.type === 'Vital').map(e => e.value);
+
+            const aiAnalysis = await medicalAIService.analyzeClincalNote(
+                inputText,
+                conditions,
+                medications,
+                vitals
+            );
+
+            setAiResults(aiAnalysis);
+
+            // Step 3: Merge AI results with rule-based results
+            const mergedExtractions = [...extractions];
+
+            // Add AI-discovered entities
+            aiAnalysis.additionalEntities.conditions.forEach(cond => {
+                mergedExtractions.push({
+                    type: 'Condition',
+                    value: cond,
+                    sourceIndex: 0,
+                    context: 'AI-Enhanced Extraction',
+                    riskLevel: 'Low'
+                });
+            });
+
+            aiAnalysis.additionalEntities.medications.forEach(med => {
+                mergedExtractions.push({
+                    type: 'Medication',
+                    value: med,
+                    sourceIndex: 0,
+                    context: 'AI-Enhanced Extraction',
+                    riskLevel: 'Low'
+                });
+            });
+
+            aiAnalysis.additionalEntities.vitals.forEach(vital => {
+                mergedExtractions.push({
+                    type: 'Vital',
+                    value: vital,
+                    sourceIndex: 0,
+                    context: 'AI-Enhanced Extraction',
+                    riskLevel: 'Low'
+                });
+            });
+
+            // Add AI-discovered drug interactions as risks
+            aiAnalysis.drugInteractions.forEach(interaction => {
+                mergedExtractions.push({
+                    type: 'Risk',
+                    value: `${interaction.drugs.join(' + ')}: ${interaction.explanation}`,
+                    sourceIndex: 0,
+                    context: 'AI-Powered Interaction Analysis',
+                    riskLevel: interaction.severity
+                });
+            });
+
+            setResults(mergedExtractions);
+        } catch (error) {
+            console.error('AI Enhancement failed:', error);
+            // Keep rule-based results if AI fails
+        } finally {
+            setIsAIProcessing(false);
+        }
+    };
+
+    const handleExtraction = () => {
+        if (useAI) {
+            runAIEnhancedExtraction();
+        } else {
+            runDeterministicExtraction();
+        }
+    };
+
     const getRiskColor = (level?: string) => {
         switch (level) {
             case 'Critical': return 'text-rose-600 bg-rose-100 border-rose-200';
@@ -252,7 +418,11 @@ Patient reports no headaches or chest pain.`);
                             <Activity className="w-8 h-8" />
                             MedSage Lite
                         </h1>
-                        <p className="text-slate-400">Rule-based clinical extraction engine with strict regex traceability.</p>
+                        <p className="text-slate-400">
+                            {useAI
+                                ? 'AI-enhanced clinical extraction with Gemini intelligence + rule-based validation'
+                                : 'Rule-based clinical extraction engine with strict regex traceability'}
+                        </p>
                     </div>
                 </div>
 
@@ -271,15 +441,53 @@ Patient reports no headaches or chest pain.`);
                                 className="w-full h-96 bg-slate-900 border border-slate-600 rounded-lg p-4 font-mono text-sm leading-relaxed focus:ring-2 focus:ring-emerald-500 focus:outline-none text-slate-300"
                                 placeholder="Paste clinical notes here..."
                             />
+
+                            {/* AI Mode Toggle */}
+                            <div className="mt-4 flex items-center justify-between p-4 bg-slate-900/50 rounded-lg border border-slate-600">
+                                <div className="flex items-center gap-3">
+                                    {useAI ? (
+                                        <Sparkles className="w-5 h-5 text-purple-400" />
+                                    ) : (
+                                        <Zap className="w-5 h-5 text-emerald-400" />
+                                    )}
+                                    <div>
+                                        <p className="text-sm font-semibold text-white">
+                                            {useAI ? 'AI-Enhanced Mode' : 'Fast Mode'}
+                                        </p>
+                                        <p className="text-xs text-slate-400">
+                                            {useAI ? 'Gemini AI + Rule-based (~2-5s)' : 'Rule-based only (~2ms)'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setUseAI(!useAI)}
+                                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${useAI ? 'bg-purple-600' : 'bg-slate-600'
+                                        }`}
+                                >
+                                    <span
+                                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${useAI ? 'translate-x-6' : 'translate-x-1'
+                                            }`}
+                                    />
+                                </button>
+                            </div>
+
                             <button
-                                onClick={runDeterministicExtraction}
-                                disabled={isProcessing}
-                                className="mt-4 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2"
+                                onClick={handleExtraction}
+                                disabled={isProcessing || isAIProcessing}
+                                className={`mt-4 w-full font-bold py-3 rounded-lg transition-colors flex items-center justify-center gap-2 ${useAI
+                                    ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                    }`}
                             >
-                                {isProcessing ? 'Processing...' : (
+                                {isProcessing || isAIProcessing ? (
                                     <>
-                                        <Search className="w-5 h-5" />
-                                        Extract & Analyze Verification
+                                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                                        {isAIProcessing ? 'AI Analyzing...' : 'Processing...'}
+                                    </>
+                                ) : (
+                                    <>
+                                        {useAI ? <Sparkles className="w-5 h-5" /> : <Search className="w-5 h-5" />}
+                                        {useAI ? 'AI-Enhanced Analysis' : 'Extract & Analyze'}
                                     </>
                                 )}
                             </button>
@@ -328,6 +536,53 @@ Patient reports no headaches or chest pain.`);
                             </div>
                         </div>
 
+                        {/* AI Insights Panel - Only shown when AI mode is used */}
+                        {useAI && aiResults && (
+                            <>
+                                <div className="bg-gradient-to-br from-purple-900/20 to-purple-800/10 rounded-xl p-6 border border-purple-700/50 shadow-xl">
+                                    <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-purple-300">
+                                        <Sparkles className="w-5 h-5" />
+                                        AI Clinical Insights
+                                    </h2>
+                                    <div className="space-y-4">
+                                        <div className="bg-slate-900/50 rounded-lg p-4 border border-purple-800/30">
+                                            <p className="text-sm text-slate-300 leading-relaxed">
+                                                {aiResults.clinicalInsights}
+                                            </p>
+                                        </div>
+
+                                        {/* Overall Risk Assessment */}
+                                        <div className={`p-4 rounded-lg border-l-4 ${getRiskColor(aiResults.riskAssessment.overallRisk)}`}>
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h3 className="font-bold text-sm">Overall Risk: {aiResults.riskAssessment.overallRisk}</h3>
+                                                    <p className="text-xs mt-1 opacity-80">{aiResults.riskAssessment.reasoning}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* AI Recommendations */}
+                                {aiResults.recommendations.length > 0 && (
+                                    <div className="bg-gradient-to-br from-blue-900/20 to-blue-800/10 rounded-xl p-6 border border-blue-700/50 shadow-xl">
+                                        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2 text-blue-300">
+                                            <FileText className="w-5 h-5" />
+                                            AI Recommendations
+                                        </h2>
+                                        <ul className="space-y-2">
+                                            {aiResults.recommendations.map((rec, idx) => (
+                                                <li key={idx} className="flex gap-3 p-3 bg-slate-900/50 rounded-lg border border-blue-800/30">
+                                                    <span className="text-blue-400 font-bold text-sm">{idx + 1}.</span>
+                                                    <span className="text-sm text-slate-300">{rec}</span>
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                            </>
+                        )}
+
                         {/* Extraction Grid */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Conditions */}
@@ -373,11 +628,21 @@ Patient reports no headaches or chest pain.`);
                                 </h3>
                                 <div className="space-y-2">
                                     {results.filter(r => r.type === 'Vital').map((item, id) => (
-                                        <div key={id} className={`flex justify-between text-sm p-3 rounded border ${item.riskLevel === 'High' ? 'bg-orange-900/20 border-orange-900/50 text-orange-200' :
-                                            item.riskLevel === 'Critical' ? 'bg-rose-900/20 border-rose-900/50 text-rose-200' :
-                                                'bg-slate-900 border-slate-700 text-slate-200'
+                                        <div key={id} className={`flex justify-between items-center text-sm p-3 rounded border ${item.riskLevel === 'Critical' ? 'bg-rose-900/20 border-rose-900/50 text-rose-200' :
+                                            item.riskLevel === 'High' ? 'bg-orange-900/20 border-orange-900/50 text-orange-200' :
+                                                item.riskLevel === 'Moderate' ? 'bg-yellow-900/20 border-yellow-900/50 text-yellow-200' :
+                                                    'bg-emerald-900/20 border-emerald-900/50 text-emerald-200'
                                             }`}>
-                                            <span className="font-mono font-bold">{item.value}</span>
+                                            <div className="flex items-center gap-3">
+                                                <span className="font-mono font-bold">{item.value}</span>
+                                                <span className={`px-2 py-0.5 rounded-full text-xs font-semibold uppercase ${item.riskLevel === 'Critical' ? 'bg-rose-600 text-white' :
+                                                    item.riskLevel === 'High' ? 'bg-orange-600 text-white' :
+                                                        item.riskLevel === 'Moderate' ? 'bg-yellow-600 text-white' :
+                                                            'bg-emerald-600 text-white'
+                                                    }`}>
+                                                    {item.riskLevel || 'Normal'}
+                                                </span>
+                                            </div>
                                             <span className="text-xs opacity-75">{item.context}</span>
                                         </div>
                                     ))}

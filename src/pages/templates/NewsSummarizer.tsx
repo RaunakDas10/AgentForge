@@ -135,7 +135,7 @@
 //         </div>
 //     );
 // };
- 
+
 
 //NOTE-1 :- You can change design except the const handleExecuteFetch function
 //NOTE-2 :- Currently using the US based en news fetching can be targeted to India by IN -be careful in changing
@@ -151,17 +151,26 @@ interface NewsItem {
     link: string;
     pubDate: string;
     thumbnail: string;
+    source: string;
 }
 
 const CATEGORIES = [
+    { id: 'top', label: 'TOP NEWS', icon: <Zap className="w-3.5 h-3.5" />, query: 'latest' },
     { id: 'tech', label: 'TECH', icon: <Cpu className="w-3.5 h-3.5" />, query: 'Technology' },
     { id: 'business', label: 'BUSINESS', icon: <Briefcase className="w-3.5 h-3.5" />, query: 'Business' },
     { id: 'sports', label: 'SPORTS', icon: <Trophy className="w-3.5 h-3.5" />, query: 'Sports' },
     { id: 'science', label: 'SCIENCE', icon: <FlaskConical className="w-3.5 h-3.5" />, query: 'Science' },
+    { id: 'entertainment', label: 'ENTERTAINMENT', icon: <ImageIcon className="w-3.5 h-3.5" />, query: 'Entertainment' },
+];
+
+const REGIONS = [
+    { id: 'india', label: 'INDIA', code: 'IN', lang: 'en-IN' },
+    { id: 'world', label: 'WORLD', code: 'US', lang: 'en-US' },
 ];
 
 const NewsSummarizer: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const [selected, setSelected] = useState(CATEGORIES[0]);
+    const [selectedRegion, setSelectedRegion] = useState(REGIONS[0]);
     const [loading, setLoading] = useState(false);
     const [articles, setArticles] = useState<NewsItem[]>([]);
     const [logs, setLogs] = useState<LogStep[]>([]);
@@ -185,36 +194,62 @@ const NewsSummarizer: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         try {
             addLog("🍳 Gathering raw data ingredients...", "info");
             await sleep(600);
-            addLog(`🔥 Preheating stream for [${selected.label}]...`, "info");
-            
-            const rssUrl = `https://news.google.com/rss/search?q=${selected.query}&hl=in-US&gl=IN&ceid=IN:en`;
+            addLog(`🔥 Preheating stream for [${selected.label}] in [${selectedRegion.label}]...`, "info");
+
+            // Calculate date 3 days ago for filtering
+            const threeDaysAgo = new Date();
+            threeDaysAgo.setDate(threeDaysAgo.getDate() - 3);
+
+            // Build query with time filter for recent news
+            const query = selected.id === 'top'
+                ? `breaking news when:3d`
+                : `${selected.query} when:3d`;
+
+            // Use proper Google News RSS with region-specific settings
+            const rssUrl = selectedRegion.id === 'india'
+                ? `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-IN&gl=IN&ceid=IN:en`
+                : `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`;
+
+            addLog(`🔍 Searching: "${query}" in ${selectedRegion.label}...`, "tool");
+
             const response = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`);
             const data = await response.json();
 
             addLog("🔪 Slicing and dicing metadata...", "analysis");
             await sleep(500);
-            addLog("🥘 Cooking the feed... adding a pinch of salt to headers.", "info");
+            addLog("🥘 Filtering last 3 days news only...", "info");
             await sleep(400);
-            addLog("🧂 Image cooking becoming salty; fixing seasoning for next time...", "tool");
-            
-            const fetched = data.items.slice(0, 5).map((item: any) => {
+            addLog("🧂 Extracting source information and thumbnails...", "tool");
+
+            // Filter and process only recent articles (last 3 days)
+            const recentArticles = data.items.filter((item: any) => {
+                const articleDate = new Date(item.pubDate);
+                return articleDate >= threeDaysAgo;
+            });
+
+            const fetched = recentArticles.slice(0, 8).map((item: any) => {
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(item.description, 'text/html');
                 const imgTag = doc.querySelector('img');
                 let imgUrl = imgTag ? imgTag.getAttribute('src') : null;
                 if (imgUrl && imgUrl.startsWith('//')) imgUrl = `https:${imgUrl}`;
 
+                // Extract source from title (usually in format "Title - Source")
+                const titleParts = item.title.split(' - ');
+                const source = titleParts.length > 1 ? titleParts[titleParts.length - 1] : 'Google News';
+
                 return {
                     title: item.title,
                     description: doc.body.textContent?.split('View Full Coverage')[0] || item.title,
                     link: item.link,
                     pubDate: item.pubDate,
-                    thumbnail: imgUrl || `https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=400`
+                    thumbnail: imgUrl || `https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=400`,
+                    source: source
                 };
             });
 
             await sleep(800);
-            addLog("🍽️ Serving the top 5 fresh headlines!", "success");
+            addLog(`🍽️ Serving ${fetched.length} fresh headlines from last 3 days in ${selectedRegion.label}!`, "success");
             setArticles(fetched);
         } catch (err) {
             addLog("🧨 Kitchen failure: Signal lost.", "error");
@@ -226,7 +261,7 @@ const NewsSummarizer: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return (
         <div className="min-h-screen bg-[#050505] text-slate-300 font-sans p-6 md:p-12 selection:bg-orange-500/30">
             <div className="max-w-[1400px] mx-auto">
-                
+
                 {/* --- HEADER --- */}
                 <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-8 mb-16">
                     <div className="space-y-4">
@@ -237,23 +272,42 @@ const NewsSummarizer: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         <h1 className="text-6xl font-bold tracking-tight text-white leading-none">
                             News<span className="text-orange-500">Chef</span>
                         </h1>
+                        <p className="text-slate-500 text-sm">Real-time news from {selectedRegion.label}</p>
                     </div>
 
-                    <div className="flex bg-white/5 p-1 rounded-xl border border-white/10">
-                        {CATEGORIES.map((cat) => (
-                            <button
-                                key={cat.id}
-                                onClick={() => setSelected(cat)}
-                                className={`px-6 py-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-2 ${
-                                    selected.id === cat.id 
-                                    ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20' 
-                                    : 'text-slate-500 hover:text-slate-300'
-                                }`}
-                            >
-                                {cat.icon}
-                                {cat.label}
-                            </button>
-                        ))}
+                    <div className="space-y-4 w-full lg:w-auto">
+                        {/* Region Toggle */}
+                        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 w-full lg:w-auto">
+                            {REGIONS.map((region) => (
+                                <button
+                                    key={region.id}
+                                    onClick={() => setSelectedRegion(region)}
+                                    className={`flex-1 lg:flex-none px-8 py-2.5 rounded-lg text-[11px] font-bold transition-all ${selectedRegion.id === region.id
+                                        ? 'bg-gradient-to-r from-orange-500 to-red-500 text-white shadow-lg shadow-orange-500/20'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                        }`}
+                                >
+                                    {region.label}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Category Tabs */}
+                        <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 overflow-x-auto">
+                            {CATEGORIES.map((cat) => (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => setSelected(cat)}
+                                    className={`px-4 lg:px-6 py-2.5 rounded-lg text-[11px] font-bold transition-all flex items-center gap-2 whitespace-nowrap ${selected.id === cat.id
+                                        ? 'bg-orange-500 text-black shadow-lg shadow-orange-500/20'
+                                        : 'text-slate-500 hover:text-slate-300'
+                                        }`}
+                                >
+                                    {cat.icon}
+                                    {cat.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 </div>
 
@@ -278,7 +332,7 @@ const NewsSummarizer: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             </div>
 
                             <div className="p-6 pt-0">
-                                <button 
+                                <button
                                     onClick={handleExecuteFetch}
                                     disabled={loading}
                                     className="w-full bg-white text-black py-4 rounded-xl font-bold text-xs hover:bg-orange-500 transition-all active:scale-[0.98] flex items-center justify-center gap-3 disabled:opacity-30 uppercase tracking-widest"
@@ -292,27 +346,37 @@ const NewsSummarizer: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <div className="lg:col-span-7 space-y-6">
                         {articles.length > 0 ? (
                             articles.map((item, i) => (
-                                <div key={i} className="group bg-[#0A0A0A] border border-white/10 rounded-2xl p-6 flex gap-8 hover:border-orange-500/30 transition-all duration-300">
-                                    
-                                    <div className="w-32 h-32 flex-shrink-0 rounded-xl overflow-hidden bg-slate-900 border border-white/5">
-                                        <img 
-                                            src={item.thumbnail} 
-                                            alt="RSS" 
+                                <div key={i} className="group bg-[#0A0A0A] border border-white/10 rounded-2xl p-6 flex gap-6 hover:border-orange-500/30 transition-all duration-300">
+
+                                    <div className="w-40 h-40 flex-shrink-0 rounded-xl overflow-hidden bg-slate-900 border border-white/5">
+                                        <img
+                                            src={item.thumbnail}
+                                            alt="News"
                                             className="w-full h-full object-cover grayscale group-hover:grayscale-0 transition-all duration-500 scale-105 group-hover:scale-100"
                                             onError={(e) => { (e.target as any).src = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=400'; }}
                                         />
                                     </div>
 
                                     <div className="flex-1 flex flex-col justify-center min-w-0">
-                                        <div className="flex items-center justify-between mb-2">
-                                            <span className="text-[9px] font-bold text-orange-500/80 tracking-widest uppercase">
-                                                {new Date(item.pubDate).toLocaleDateString()} — 0{i + 1}
-                                            </span>
-                                            <a href={item.link} target="_blank" rel="noreferrer" className="text-slate-600 hover:text-white transition-colors">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-[9px] font-bold text-orange-500/80 tracking-widest uppercase">
+                                                    {new Date(item.pubDate).toLocaleDateString()} — 0{i + 1}
+                                                </span>
+                                                <span className="px-2 py-1 bg-orange-500/10 border border-orange-500/20 rounded text-[9px] font-bold text-orange-400 uppercase tracking-wider">
+                                                    {item.source}
+                                                </span>
+                                            </div>
+                                            <a
+                                                href={item.link}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-slate-600 hover:text-orange-500 transition-colors flex items-center gap-1 text-xs"
+                                            >
                                                 <ExternalLink className="w-4 h-4" />
                                             </a>
                                         </div>
-                                        <h2 className="text-xl font-semibold text-white leading-snug tracking-tight mb-2 group-hover:text-orange-400 transition-colors truncate-2-lines">
+                                        <h2 className="text-xl font-semibold text-white leading-snug tracking-tight mb-2 group-hover:text-orange-400 transition-colors line-clamp-2">
                                             {item.title}
                                         </h2>
                                         <p className="text-[13px] text-slate-500 leading-relaxed line-clamp-2">
@@ -325,6 +389,7 @@ const NewsSummarizer: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             <div className="h-[558px] border-2 border-dashed border-white/5 rounded-2xl flex flex-col items-center justify-center space-y-4 grayscale opacity-20">
                                 <ImageIcon className="w-12 h-12" />
                                 <span className="text-[10px] font-bold tracking-[0.4em] uppercase">Idle_Signal</span>
+                                <p className="text-xs text-slate-600">Click Execute_Fetch to load news</p>
                             </div>
                         )}
                     </div>
